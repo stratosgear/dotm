@@ -1,0 +1,310 @@
+#!/bin/bash
+##########################################
+# @author Brett Batie
+# @author Stratos Gerakakis
+# source code & documentation @ https://github.com/brettbatie/dotfiles/
+##########################################
+
+# Before calling this script you must have defined a dotm_settings
+# script file in the parent directory of this script.
+
+# For an example look at a dotm skeleton project at:
+# https://github.com/stratosgear/dotm_skeleton.git
+
+# SETTINGS
+
+# load settings file
+. ../dotm_settings
+
+# Specify where your want to store your dot files
+dotDir=${dotm_dotDir}
+
+# Specify your github repository that your dot files will be tracked
+masterRepository=${dotm_masterRepository}
+
+# comma delimited list for only creating a minimal set of symlinks
+minimalSymlinkFiles=${dotm_minimalSymlinkFiles}
+
+#########################################
+
+function help {
+cat << EOF
+USAGE: $(basename $0) [-options] [-d /path/to/dotFileDirectory] [-r masterRepository]
+
+    -d dotFileDirectory : The directory that contains the static files that will
+                         be linked to from the ~ directory. If the 
+                         dotFileDirectory is not specified then ~/dotfiles is
+                         used by default.
+
+    -r masterRepository : The url/path to the git repository that changes will 
+                         be pushed and pulled from.
+
+    -a : Will create symlinks for all files in the dot file directory without 
+         asking questions. Special directories (bin, source, etc) will still be
+         skipped.
+
+    -m : Create symlinks using the minimal list
+
+    -h : this help screen
+EOF
+
+
+
+}
+
+function checkParameters {
+    if [ "$1" ==  "--help" ]; then
+        help
+        exit 0
+    fi
+
+    local OPTIND=1 # Reset in case getopts has been used previously in the shell.
+
+    while getopts ":d:r:amh" opt; do
+      case $opt in
+        d)
+            dotDir=$OPTARG;
+            ;;
+        r)
+            masterRepository=$OPTARG;
+            ;;
+        a)
+            symlinkOption="all"
+            ;;
+        m)
+            symlinkOption="minimal"
+            ;;
+        h|\?)
+            help
+            exit 0
+            ;;
+      esac
+    done
+
+    # Make sure the dotfile directory structure exists
+    if [ ! -d "$dotDir" ]; then
+        mkdir -v -p "$dotDir";
+    fi
+
+    # Trim the trailing slash from the dot directory (if there is one)
+    if [[ $dotDir == */ ]]; then
+        dotDir="${dotDir%?}"
+    fi
+
+    # Set directories based on defined dotDir.
+    backupDir=$dotDir/dotfiles-backup
+    customDir=$dotDir/custom
+    binDir=$dotDir/bin
+    sourceDir=$dotDir/source
+
+}
+
+function updateRepo {
+    # Check if git is installed before doing git operations
+    type git >/dev/null 2>&1 || { 
+        echo "************************************"
+        echo >&2 "Git is required to clone/pull dot files from a remote repository. "\
+        "Symlinks can still be auto created to files in $dotDir but a remote repository will not be used.";
+        echo "************************************"
+        return;
+    }
+
+    # if there is repo here update it, otherwise create the repo
+    if [ ! -d "$dotDir/.git" ]; then
+        displayTitle "DOWNLOADING MASTER REPOSITORY ($masterRepository)"
+        git clone $masterRepository $dotDir
+    else
+        displayTitle "Updating Master Repository"
+        (cd $dotDir && git pull $masterRepository)
+    fi
+}
+
+function createDirectories {
+    # Verify that the backup directory exists
+    if [ ! -d "$backupDir" ]; then
+        mkdir -v -p "$backupDir"
+    fi
+
+    if [ ! -d "$sourceDir" ]; then
+        mkdir -v -p "$sourceDir"
+    fi
+
+    if [ ! -d "$binDir" ]; then
+        mkdir -v -p "$binDir"
+    fi
+
+    if [ ! -d "$customDir" ]; then
+        mkdir -v -p "$customDir"
+    fi
+
+    # Download and save dotm to the bin directory if this script is running from
+    # a remote location and the dotfiles directory was empty.
+    if [ ! -f "$binDir/dotm" ] && [ ! hash dotm >/dev/null 2>&1 ]; then
+        # FIXME: could add check here to see if wget exists and fall back to fetch or curl
+        wget -nv -O $dotDir/bin/dotm https://raw.github.com/brettbatie/dotfiles/master/bin/dotm
+        chmod +x $dotDir/bin/dotm
+    fi
+}
+
+function symlinkOption {
+    # no need to ask questions if the user specified the setting with a startup 
+    # parameter
+    if [ -n "$symlinkOption" ]; then
+        return;
+    fi
+
+    echo -e "\n\n"
+    PS3="Select above option regarding how to create the symlinks:"
+    options=("Create all symlinks                         " #hack to get the columns on new lines. Is there a better way?
+    "Ask before creating each"
+     "Use minimal list ($minimalSymlinkFiles)"
+     )
+    select opt in "${options[@]}"
+    do
+        case $opt in
+            "Create all symlinks                         ")
+                symlinkOption="all"
+                break;
+                ;;
+            "Ask before creating each")
+                symlinkOption="ask"
+                break;
+                ;;
+            "Use minimal list ($minimalSymlinkFiles)")
+                symlinkOption="minimal"
+                break;
+                ;;
+            *) echo invalid option;;
+        esac
+    done
+
+    # Determine if we are going to use a minimal list of files to symlink
+    if [ "$symlinkOption" == "minimal" ]; then
+        if [ "$minimalSymlinkFiles" == "" ]; then
+            echo "No minimal files to symlink, exiting."
+            exit 1;
+        fi
+        minimalSymlinkFiles="-name ${minimalSymlinkFiles/,/ -o -name }"
+    else
+        minimalSymlinkFiles=""
+    fi
+
+    
+    # FIXME: this find command should be using the same find arguments as in the 
+    #        function createSymLink. Should create that as a variable earlier 
+    #        in the code. I believe this can be accomplished by using eval but
+    #        it might be evil http://mywiki.wooledge.org/BashFAQ/048
+
+    # Check for files before going any further
+    fileCount=$(find "$dotDir" \( -type f $minimalSymlinkFiles \
+                -not -path "*/*\.lnk/*" \
+                -not -path "*/.hg/*" \
+                -not -path "*/.git/*" \
+                -not -path "$dotDir/README.md*" \
+                -not -path "$backupDir/*" \
+                -not -path "$binDir/*" \
+                -not -path "$customDir/*" \
+                -not -path "$sourceDir/*" \) \
+                -o -type d -path "*\.lnk" | wc -l);
+    if [ "$fileCount" == "0" ]; then
+        echo -e "\nThere are no files in the $dotDir. No symlinks will be created."
+        exit 0;
+    fi
+}
+
+function displayTitle {
+    echo -e "\n\e[4m\033[1m$1\033[0m"
+}
+
+function createSymLinks {
+
+    local symlinksCreated=0;
+
+    displayTitle "Creating Symlinks in ~ for files in $dotDir"
+
+    # create the symlinks for every file in the given dotfile directory.
+    for file in $(find "$dotDir" \( -type f $minimalSymlinkFiles \
+                -not -path "*/*\.lnk/*" \
+                -not -path "*/.hg/*" \
+                -not -path "*/.git/*" \
+                -not -path "$dotDir/README.md*" \
+                -not -path "$backupDir/*" \
+                -not -path "$binDir/*" \
+                -not -path "$customDir/*" \
+                -not -path "$sourceDir/*" \) \
+                -o -type d -path "*\.lnk" ); do
+
+        # get the file with a path relative to the dotDir
+        local relativeFile=${file#$dotDir} #remove $dotDir from $file
+
+        # Remove the leading slash if there is one
+        if [[ $relativeFile == /* ]]; then
+            relativeFile=${relativeFile:1}
+        fi
+
+                # remove .lnk from the dirctory name
+        if [ -d "$file" ]; then
+            relativeFile=${relativeFile%.lnk}
+        fi
+
+        # If the symlink is already in place, move to the next file, nothing to do
+        local destinationFile="$(readlink -f $HOME/$relativeFile)"
+        if [ "$destinationFile" == "$file" ]; then
+            continue;
+        fi
+
+
+        if [ "$symlinkOption" == "ask" ]; then
+            read -p "Create symlink ~/$relativeFile -> $file? [y/n] " -n 1 -r
+            echo 
+            # if not yes, then skip it
+            if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+                continue
+            fi
+        fi
+
+        # Create a backup if there is a file or directory that will be overwritten
+        if [ -f "$HOME/$relativeFile" -o -d "$HOME/$relativeFile" ]; then
+            echo "Making backup of $relativeFile in $backupDir"
+            # Strip the filename from the full path
+            fullBackupPath=$backupDir/$(dirname ${relativeFile})
+
+            # Make sure that the backup directory and sub directories exist
+            if [ ! -d $fullBackupPath ]; then
+                mkdir -p $fullBackupPath
+            fi
+
+            # backup the file
+            mv $HOME/$relativeFile $backupDir/$relativeFile.$(date +"%Y%m%d%H%M")
+        fi
+
+        # Strip the filename from the relative Path
+        local destinationDir=$HOME/$(dirname ${relativeFile})
+
+        # Make sure that the destination directory exists
+        if [ ! -d $destinationDir ]; then
+            mkdir -p $destinationDir
+        fi
+
+        echo "Creating symlink ~/$relativeFile -> $file"
+        ln -s "$file" "$HOME/$relativeFile"
+
+        # If this is a bashrc file it will need to be sourced
+        if [ "$relativeFile" == ".bashrc" ]; then
+            # wish I could automate this for the parent shell.
+            echo "**************************"
+            echo 'To update your current shell run the command, source ~/.bashrc';
+            echo "**************************"
+        fi
+
+        symlinksCreated=$(($symlinksCreated+1))
+    done;
+
+    echo "$symlinksCreated new symlinks created in ~"
+}
+
+checkParameters $@
+updateRepo
+createDirectories
+symlinkOption
+createSymLinks
