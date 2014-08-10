@@ -14,7 +14,8 @@
 # SETTINGS
 
 # load settings file
-. ../dotm_settings
+this_dir="$(dirname "$0")"
+. ${this_dir}/../dotm_settings
 
 # Specify where your want to store your dot files
 dotDir=${dotm_dotDir}
