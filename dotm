@@ -137,13 +137,6 @@ function createDirectories {
         mkdir -v -p "$customDir"
     fi
 
-    # Download and save dotm to the bin directory if this script is running from
-    # a remote location and the dotfiles directory was empty.
-    if [ ! -f "$binDir/dotm" ] && [ ! hash dotm >/dev/null 2>&1 ]; then
-        # FIXME: could add check here to see if wget exists and fall back to fetch or curl
-        wget -nv -O $dotDir/bin/dotm https://raw.github.com/brettbatie/dotfiles/master/bin/dotm
-        chmod +x $dotDir/bin/dotm
-    fi
 }
 
 function symlinkOption {
@@ -200,6 +193,7 @@ function symlinkOption {
                 -not -path "*/*\.lnk/*" \
                 -not -path "*/.hg/*" \
                 -not -path "*/.git/*" \
+                -not -path "$dotDir/.gitmodules*" \
                 -not -path "$dotDir/README.md*" \
                 -not -path "$backupDir/*" \
                 -not -path "$binDir/*" \
@@ -227,6 +221,7 @@ function createSymLinks {
                 -not -path "*/*\.lnk/*" \
                 -not -path "*/.hg/*" \
                 -not -path "*/.git/*" \
+                -not -path "$dotDir/.gitmodules*" \
                 -not -path "$dotDir/README.md*" \
                 -not -path "$backupDir/*" \
                 -not -path "$binDir/*" \
