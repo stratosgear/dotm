@@ -148,7 +148,7 @@ function symlinkOption {
     fi
 
     echo -e "\n\n"
-    PS3="Select above option regarding how to create the symlinks:"
+    PS3="Select above option regarding how to create the symlinks: "
     options=("Create all symlinks                         " #hack to get the columns on new lines. Is there a better way?
     "Ask before creating each"
      "Use minimal list ($minimalSymlinkFiles)"
@@ -195,6 +195,8 @@ function symlinkOption {
                 -not -path "*/.hg/*" \
                 -not -path "*/.git/*" \
                 -not -path "$dotDir/.gitmodules*" \
+                -not -path "$dotDir/dotm_settings" \
+                -not -path "$dotDir/dotm/*" \
                 -not -path "$dotDir/README.md*" \
                 -not -path "$backupDir/*" \
                 -not -path "$binDir/*" \
@@ -223,6 +225,8 @@ function createSymLinks {
                 -not -path "*/.hg/*" \
                 -not -path "*/.git/*" \
                 -not -path "$dotDir/.gitmodules*" \
+                -not -path "$dotDir/dotm_settings" \
+                -not -path "$dotDir/dotm/*" \
                 -not -path "$dotDir/README.md*" \
                 -not -path "$backupDir/*" \
                 -not -path "$binDir/*" \
